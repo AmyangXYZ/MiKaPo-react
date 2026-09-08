@@ -29,6 +29,7 @@ const EXPORT_CLIP_NAME = "mikapo-capture"
 import { BoneState, SOLVER_REST_BONES, type BodyCollider } from "@/lib/solver"
 import { clearUploads, hasStoredUploads, loadModelUpload, saveModelUpload } from "@/lib/asset-store"
 import { FaceSolverResult } from "@/lib/face-blendshape-solver"
+import { BLOOM, SUN, WORLD } from "@/lib/look"
 
 /** Stable engine key for the bundled default PMX — folder uploads swap via removeModel + new id. */
 const DEFAULT_MODEL_KEY = "mikapo"
@@ -290,7 +291,10 @@ export default function MainScene() {
     if (canvasRef.current) {
       try {
         const engine = new Engine(canvasRef.current, {
-          bloom: { color: new Vec3(0.5, 0.1, 0.9), intensity: 0.03 },
+          // reze.design's lighting, so a model dressed there looks the same here.
+          world: WORLD,
+          sun: SUN,
+          bloom: BLOOM,
           // Further out than the engine default: a capture is watched whole —
           // raised arms and a deep crouch both have to stay in frame.
           camera: { distance: 30 },
@@ -303,6 +307,9 @@ export default function MainScene() {
         // The exported motion still carries its own per-chain state for whoever
         // plays it back.
         engine.setIKEnabled(false)
+        // The ink line reze.design's demo scene wears, and the reason a model
+        // styled there reads as drawn rather than shaded when it gets here.
+        engine.setOutlineEnabled(true)
         // Sampled, not streamed: setState per rendered frame re-rendered this
         // component — and the capture panel under it — sixty times a second,
         // for a number the eye reads twice. That work came straight out of the
