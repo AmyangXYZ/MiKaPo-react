@@ -29,10 +29,24 @@ const EXPORT_CLIP_NAME = "mikapo-capture"
 import { BoneState, SOLVER_REST_BONES, type BodyCollider } from "@/lib/solver"
 import { clearUploads, hasStoredUploads, loadModelUpload, saveModelUpload } from "@/lib/asset-store"
 import { FaceSolverResult } from "@/lib/face-blendshape-solver"
-import { ASSETS } from "@/lib/assets"
 
 /** Stable engine key for the bundled default PMX — folder uploads swap via removeModel + new id. */
 const DEFAULT_MODEL_KEY = "mikapo"
+
+/** The character every visitor lands on, served from the bucket the three apps share. */
+const DEFAULT_MODEL_URL = "https://assets.reze.one/demo/reze/reze.pmx"
+
+/**
+ * How long to wait before each retry of that download.
+ *
+ * A first load dies on the network far more often than on the file: a phone
+ * handing off between cells, a captive portal answering the first request, a
+ * proxy dropping a connection mid-transfer. Every one of those throws the same
+ * bare `TypeError: Failed to fetch` and every one of them is gone a second
+ * later. Three tries spanning ~1.6s cost nothing when the first succeeds, and
+ * whatever survives all three is a real failure worth showing.
+ */
+const RETRY_DELAYS_MS = [400, 1200]
 
 // Whether this build ships the demo model (absent = on). Set
 // NEXT_PUBLIC_USE_DEFAULT_ASSETS=false to boot empty; parsed leniently, same
@@ -213,7 +227,30 @@ export default function MainScene() {
       } catch {
         /* nothing loaded under that name */
       }
-      const model = await engine.loadModel(DEFAULT_MODEL_KEY, "https://assets.reze.one/demo/reze/reze.pmx")
+      let model: Model | null = null
+      let lastError: unknown = null
+      for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt - 1]))
+          // A retry after the GPU half of a load failed would find the key
+          // taken, and loadModel's dedupe would quietly register the second
+          // attempt as "mikapo_1" — a name removeModel never looks under.
+          try {
+            engine.removeModel(DEFAULT_MODEL_KEY)
+          } catch {
+            /* the failed attempt never got as far as registering */
+          }
+        }
+        // A folder upload landed while we were waiting: it owns the stage now.
+        if (gen !== loadGenerationRef.current) return false
+        try {
+          model = await engine.loadModel(DEFAULT_MODEL_KEY, DEFAULT_MODEL_URL)
+          break
+        } catch (err) {
+          lastError = err
+        }
+      }
+      if (!model) throw lastError
       if (gen !== loadGenerationRef.current) {
         try {
           engine.removeModel(DEFAULT_MODEL_KEY)
